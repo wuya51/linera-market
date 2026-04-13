@@ -671,7 +671,7 @@ const Leaderboard = () => {
         <table className="min-w-full bg-white dark:bg-gray-800 rounded-xl overflow-hidden">
           <thead className="bg-gradient-to-r from-blue-500 to-purple-500 text-white">
             <tr>
-              <th className="px-6 py-4 text-left font-semibold">#</th>
+              <th className="px-6 py-4 text-left font-semibold">Rank</th>
               <th className="px-6 py-4 text-left font-semibold">Address</th>
               <th className="px-6 py-4 text-right font-semibold">
                 Total Amount
@@ -724,7 +724,10 @@ const Leaderboard = () => {
           </thead>
           <tbody>
             {currentItems?.map((entry: LeaderboardEntry, index: number) => {
-              const rank = startIndex + index + 1;
+              const rank =
+                rankingView === "total"
+                  ? entry.totalRank
+                  : entry.latestWeekRank;
               const displayProfit =
                 rankingView === "total"
                   ? entry.profit
@@ -734,7 +737,7 @@ const Leaderboard = () => {
                   key={entry.key}
                   className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                 >
-                  <td className="px-6 py-4 font-medium">{rank}</td>
+                  <td className="px-6 py-4 font-medium">{rank || 0}</td>
                   <td className="px-6 py-4 font-mono text-sm truncate max-w-xs">
                     <button
                       onClick={() => {
