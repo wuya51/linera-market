@@ -23,6 +23,8 @@ interface LeaderboardEntry {
   };
   totalAmount?: number;
   totalCostBasis?: number;
+  totalCount?: number;
+  weekCounts?: Record<number, number>;
   profit?: number;
   latestWeekProfit?: number;
   totalRank?: number;
@@ -50,6 +52,8 @@ const Leaderboard = () => {
   const [inputPage, setInputPage] = useState("");
   const [searchView, setSearchView] = useState<"latest" | "total">("latest");
   const [rankingView, setRankingView] = useState<"total" | number>("total");
+  const [sortField, setSortField] = useState<"profit" | "count">("profit");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const itemsPerPage = 100;
 
   const {
@@ -86,20 +90,25 @@ const Leaderboard = () => {
     const withProfits = leaderboard.map((entry) => {
       let totalAmount = 0;
       let totalCostBasis = 0;
+      let totalCount = 0;
       let latestWeekProfit = 0;
+      const weekCounts: Record<number, number> = {};
 
       // Calculate total profit
       const slowPeriods = entry.value?.slowPeriods;
       if (slowPeriods && typeof slowPeriods === "object") {
         Object.entries(slowPeriods).forEach(([week, period]: [string, any]) => {
           if (period && period.amount && period.cost_basis) {
+            const weekNum = parseInt(week);
             const weekProfit =
               parseFloat(period.amount) - parseFloat(period.cost_basis);
             totalAmount += parseFloat(period.amount) || 0;
             totalCostBasis += parseFloat(period.cost_basis) || 0;
+            totalCount += period.count || 0;
+            weekCounts[weekNum] = period.count || 0;
 
             // Calculate latest week profit
-            if (latestWeek !== null && parseInt(week) === latestWeek) {
+            if (latestWeek !== null && weekNum === latestWeek) {
               latestWeekProfit = weekProfit;
             }
           }
@@ -110,6 +119,8 @@ const Leaderboard = () => {
         ...entry,
         totalAmount,
         totalCostBasis,
+        totalCount,
+        weekCounts,
         profit: totalAmount - totalCostBasis,
         latestWeekProfit,
       };
@@ -175,15 +186,37 @@ const Leaderboard = () => {
 
   // Sort data based on selected ranking view
   const sortedLeaderboard = useMemo(() => {
-    if (rankingView === "total") {
-      return [...processedData].sort((a, b) => b.profit - a.profit);
-    } else {
-      // Sort by specific week profit
-      return [...processedData].sort(
-        (a, b) => getWeekProfit(b, rankingView) - getWeekProfit(a, rankingView),
-      );
-    }
-  }, [processedData, rankingView]);
+    return [...processedData].sort((a, b) => {
+      if (sortField === "count") {
+        // Sort by count
+        if (rankingView === "total") {
+          // Total view: sort by total count
+          return sortOrder === "desc"
+            ? (b.totalCount || 0) - (a.totalCount || 0)
+            : (a.totalCount || 0) - (b.totalCount || 0);
+        } else {
+          // Week view: sort by week count
+          const weekCountA = a.weekCounts?.[rankingView] || 0;
+          const weekCountB = b.weekCounts?.[rankingView] || 0;
+          return sortOrder === "desc"
+            ? weekCountB - weekCountA
+            : weekCountA - weekCountB;
+        }
+      } else {
+        // Sort by profit
+        if (rankingView === "total") {
+          return sortOrder === "desc"
+            ? (b.profit || 0) - (a.profit || 0)
+            : (a.profit || 0) - (b.profit || 0);
+        } else {
+          // For week view, sort by week profit
+          const weekDiff =
+            getWeekProfit(b, rankingView) - getWeekProfit(a, rankingView);
+          return sortOrder === "desc" ? weekDiff : -weekDiff;
+        }
+      }
+    });
+  }, [processedData, rankingView, sortField, sortOrder]);
 
   // Search for user
   const handleSearch = async () => {
@@ -647,9 +680,42 @@ const Leaderboard = () => {
                 Total Cost Basis
               </th>
               <th className="px-6 py-4 text-right font-semibold">
-                {rankingView === "total"
-                  ? "Total Profit"
-                  : `Week ${rankingView + 1} Profit`}
+                <button
+                  onClick={() => {
+                    if (sortField === "count") {
+                      setSortOrder(sortOrder === "desc" ? "asc" : "desc");
+                    } else {
+                      setSortField("count");
+                      setSortOrder("desc");
+                    }
+                  }}
+                  className="flex items-center justify-end gap-1 hover:text-white/90 transition-colors w-full"
+                >
+                  Count
+                  {sortField === "count" && (
+                    <span>{sortOrder === "desc" ? "↓" : "↑"}</span>
+                  )}
+                </button>
+              </th>
+              <th className="px-6 py-4 text-right font-semibold">
+                <button
+                  onClick={() => {
+                    if (sortField === "profit") {
+                      setSortOrder(sortOrder === "desc" ? "asc" : "desc");
+                    } else {
+                      setSortField("profit");
+                      setSortOrder("desc");
+                    }
+                  }}
+                  className="flex items-center justify-end gap-1 hover:text-white/90 transition-colors w-full"
+                >
+                  {rankingView === "total"
+                    ? "Total Profit"
+                    : `Week ${rankingView + 1} Profit`}
+                  {sortField === "profit" && (
+                    <span>{sortOrder === "desc" ? "↓" : "↑"}</span>
+                  )}
+                </button>
               </th>
               <th className="px-6 py-4 text-right font-semibold">
                 Last Updated
@@ -670,14 +736,27 @@ const Leaderboard = () => {
                 >
                   <td className="px-6 py-4 font-medium">{rank}</td>
                   <td className="px-6 py-4 font-mono text-sm truncate max-w-xs">
-                    {entry.key.substring(0, 10)}...
-                    {entry.key.substring(entry.key.length - 6)}
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(entry.key);
+                      }}
+                      className="hover:text-blue-500 transition-colors cursor-pointer"
+                      title="Click to copy full address"
+                    >
+                      {entry.key.substring(0, 10)}...
+                      {entry.key.substring(entry.key.length - 6)}
+                    </button>
                   </td>
                   <td className="px-6 py-4 text-right font-mono font-medium">
                     {entry.totalAmount?.toFixed(4)}
                   </td>
                   <td className="px-6 py-4 text-right font-mono">
                     {entry.totalCostBasis?.toFixed(4)}
+                  </td>
+                  <td className="px-6 py-4 text-right font-mono">
+                    {rankingView === "total"
+                      ? entry.totalCount || 0
+                      : entry.weekCounts?.[rankingView] || 0}
                   </td>
                   <td
                     className={`px-6 py-4 text-right font-mono font-medium ${(displayProfit || 0) >= 0 ? "text-green-500" : "text-red-500"}`}
