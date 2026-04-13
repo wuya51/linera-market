@@ -689,7 +689,7 @@ const Leaderboard = () => {
                       setSortOrder("desc");
                     }
                   }}
-                  className="flex items-center gap-1 hover:text-white/90 transition-colors"
+                  className="flex items-center justify-end gap-1 hover:text-white/90 transition-colors w-full"
                 >
                   Count
                   {sortField === "count" && (
@@ -707,7 +707,7 @@ const Leaderboard = () => {
                       setSortOrder("desc");
                     }
                   }}
-                  className="flex items-center gap-1 hover:text-white/90 transition-colors"
+                  className="flex items-center justify-end gap-1 hover:text-white/90 transition-colors w-full"
                 >
                   {rankingView === "total"
                     ? "Total Profit"
