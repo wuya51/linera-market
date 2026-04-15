@@ -25,6 +25,8 @@ interface LeaderboardEntry {
   totalCostBasis?: number;
   totalCount?: number;
   weekCounts?: Record<number, number>;
+  weekAmounts?: Record<number, number>;
+  weekCostBases?: Record<number, number>;
   profit?: number;
   latestWeekProfit?: number;
   totalRank?: number;
@@ -93,6 +95,8 @@ const Leaderboard = () => {
       let totalCount = 0;
       let latestWeekProfit = 0;
       const weekCounts: Record<number, number> = {};
+      const weekAmounts: Record<number, number> = {};
+      const weekCostBases: Record<number, number> = {};
 
       // Calculate total profit
       const slowPeriods = entry.value?.slowPeriods;
@@ -102,10 +106,14 @@ const Leaderboard = () => {
             const weekNum = parseInt(week);
             const weekProfit =
               parseFloat(period.amount) - parseFloat(period.cost_basis);
-            totalAmount += parseFloat(period.amount) || 0;
-            totalCostBasis += parseFloat(period.cost_basis) || 0;
+            const periodAmount = parseFloat(period.amount) || 0;
+            const periodCostBasis = parseFloat(period.cost_basis) || 0;
+            totalAmount += periodAmount;
+            totalCostBasis += periodCostBasis;
             totalCount += period.count || 0;
             weekCounts[weekNum] = period.count || 0;
+            weekAmounts[weekNum] = periodAmount;
+            weekCostBases[weekNum] = periodCostBasis;
 
             // Calculate latest week profit
             if (latestWeek !== null && weekNum === latestWeek) {
@@ -121,6 +129,8 @@ const Leaderboard = () => {
         totalCostBasis,
         totalCount,
         weekCounts,
+        weekAmounts,
+        weekCostBases,
         profit: totalAmount - totalCostBasis,
         latestWeekProfit,
       };
@@ -674,10 +684,14 @@ const Leaderboard = () => {
               <th className="px-6 py-4 text-left font-semibold">Rank</th>
               <th className="px-6 py-4 text-left font-semibold">Address</th>
               <th className="px-6 py-4 text-right font-semibold">
-                Total Amount
+                {rankingView === "total"
+                  ? "Total Amount"
+                  : `Week ${rankingView + 1} Amount`}
               </th>
               <th className="px-6 py-4 text-right font-semibold">
-                Total Cost Basis
+                {rankingView === "total"
+                  ? "Total Cost Basis"
+                  : `Week ${rankingView + 1} Cost Basis`}
               </th>
               <th className="px-6 py-4 text-right font-semibold">
                 <button
@@ -751,10 +765,16 @@ const Leaderboard = () => {
                     </button>
                   </td>
                   <td className="px-6 py-4 text-right font-mono font-medium">
-                    {entry.totalAmount?.toFixed(4)}
+                    {rankingView === "total"
+                      ? entry.totalAmount?.toFixed(4)
+                      : entry.weekAmounts?.[rankingView]?.toFixed(4) ||
+                        "0.0000"}
                   </td>
                   <td className="px-6 py-4 text-right font-mono">
-                    {entry.totalCostBasis?.toFixed(4)}
+                    {rankingView === "total"
+                      ? entry.totalCostBasis?.toFixed(4)
+                      : entry.weekCostBases?.[rankingView]?.toFixed(4) ||
+                        "0.0000"}
                   </td>
                   <td className="px-6 py-4 text-right font-mono">
                     {rankingView === "total"
