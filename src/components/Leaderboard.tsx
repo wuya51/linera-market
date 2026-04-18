@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { fetchLeaderboard, fetchUserEarnings } from "../utils/graphql";
 
 interface SlowPeriod {
@@ -31,6 +31,7 @@ interface LeaderboardEntry {
   latestWeekProfit?: number;
   totalRank?: number;
   latestWeekRank?: number;
+  weekRanks?: Record<number, { rank: number; totalUsers: number }>;
 }
 
 interface UserEarningsEntry {
@@ -57,6 +58,7 @@ const Leaderboard = () => {
   const [sortField, setSortField] = useState<"profit" | "count">("profit");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const itemsPerPage = 100;
+  const searchResultsRef = useRef<HTMLDivElement>(null);
 
   const {
     data: leaderboard,
@@ -81,6 +83,13 @@ const Leaderboard = () => {
     });
     return maxWeek;
   }, [leaderboard]);
+
+  // Set default to latest week when data loads
+  useEffect(() => {
+    if (latestWeek !== null && latestWeek > 0) {
+      setRankingView(latestWeek);
+    }
+  }, [latestWeek]);
 
   // Calculate total profit and latest week profit, and add rankings
   const processedData = useMemo(() => {
@@ -144,32 +153,69 @@ const Leaderboard = () => {
     }));
 
     // Sort by latest week profit and add latest week rank
-    const sortedByLatestWeek = [...withProfits].sort(
+    // Only rank users who have transactions in the latest week
+    const latestWeekUsers = withProfits.filter(
+      (entry) => entry.weekCounts?.[latestWeek || 0] > 0,
+    );
+    const sortedByLatestWeek = [...latestWeekUsers].sort(
       (a, b) => (b.latestWeekProfit || 0) - (a.latestWeekProfit || 0),
     );
-    const withLatestWeekRank = sortedByLatestWeek.map((entry, index) => ({
-      ...entry,
-      latestWeekRank: index + 1,
-    }));
+    const withLatestWeekRankMap = new Map();
+    sortedByLatestWeek.forEach((entry, index) => {
+      withLatestWeekRankMap.set(entry.key, index + 1);
+    });
+
+    // Calculate ranks for all weeks (only users with transactions in that week)
+    const allWeeks = new Set<number>();
+    withProfits.forEach((entry) => {
+      Object.keys(entry.weekCounts || {}).forEach((week) => {
+        allWeeks.add(parseInt(week));
+      });
+    });
+
+    const weekRanksMap = new Map<
+      string,
+      Record<number, { rank: number; totalUsers: number }>
+    >();
+
+    allWeeks.forEach((week) => {
+      // Get users who have transactions in this week
+      const weekUsers = withProfits.filter(
+        (entry) => entry.weekCounts?.[week] > 0,
+      );
+
+      // Sort by week profit
+      const sortedWeekUsers = [...weekUsers].sort((a, b) => {
+        const aProfit =
+          parseFloat(a.value.slowPeriods?.[week]?.amount || "0") -
+          parseFloat(a.value.slowPeriods?.[week]?.cost_basis || "0");
+        const bProfit =
+          parseFloat(b.value.slowPeriods?.[week]?.amount || "0") -
+          parseFloat(b.value.slowPeriods?.[week]?.cost_basis || "0");
+        return bProfit - aProfit;
+      });
+
+      const totalWeekUsers = sortedWeekUsers.length;
+
+      sortedWeekUsers.forEach((entry, index) => {
+        const existing = weekRanksMap.get(entry.key) || {};
+        existing[week] = { rank: index + 1, totalUsers: totalWeekUsers };
+        weekRanksMap.set(entry.key, existing);
+      });
+    });
 
     // Merge rankings back
     const rankMap = new Map();
     withTotalRank.forEach((entry) => {
       rankMap.set(entry.key, { totalRank: entry.totalRank });
     });
-    withLatestWeekRank.forEach((entry) => {
-      const existing = rankMap.get(entry.key) || {};
-      rankMap.set(entry.key, {
-        ...existing,
-        latestWeekRank: entry.latestWeekRank,
-      });
-    });
 
     // Return with both rankings
     return withProfits.map((entry) => ({
       ...entry,
       totalRank: rankMap.get(entry.key)?.totalRank,
-      latestWeekRank: rankMap.get(entry.key)?.latestWeekRank,
+      latestWeekRank: withLatestWeekRankMap.get(entry.key) || 0,
+      weekRanks: weekRanksMap.get(entry.key) || {},
     }));
   }, [leaderboard, latestWeek]);
 
@@ -229,14 +275,15 @@ const Leaderboard = () => {
   }, [processedData, rankingView, sortField, sortOrder]);
 
   // Search for user
-  const handleSearch = async () => {
-    if (!searchQuery.trim() || !sortedLeaderboard) {
+  const handleSearch = async (address?: string) => {
+    const queryString = address || searchQuery;
+    if (!queryString.trim() || !sortedLeaderboard) {
       setSearchedEntry(null);
       setUserEarnings(null);
       return;
     }
 
-    const query = searchQuery.toLowerCase().trim();
+    const query = queryString.toLowerCase().trim();
 
     // 检查是否包含该地址（部分匹配）
     const matchingEntries = sortedLeaderboard.filter((entry) =>
@@ -255,9 +302,24 @@ const Leaderboard = () => {
         if (earningsData) {
           setUserEarnings(earningsData as UserEarningsEntry);
         }
+        // 滚动到搜索结果区域
+        setTimeout(() => {
+          searchResultsRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }, 100);
       } catch (err) {
         console.error("Failed to fetch user earnings:", err);
       }
+    } else {
+      // 滚动到搜索结果区域（即使没有找到结果）
+      setTimeout(() => {
+        searchResultsRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 100);
     }
   };
 
@@ -380,7 +442,7 @@ const Leaderboard = () => {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={handleSearch}
+              onClick={() => handleSearch()}
               className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
             >
               <svg
@@ -411,7 +473,10 @@ const Leaderboard = () => {
 
         {/* Search Results */}
         {searchedEntry && (
-          <div className="mt-6 border-t dark:border-gray-700 pt-6">
+          <div
+            ref={searchResultsRef}
+            className="mt-6 border-t dark:border-gray-700 pt-6"
+          >
             <div className="flex justify-center gap-4 mb-4">
               <button
                 onClick={() => setSearchView("latest")}
@@ -738,10 +803,14 @@ const Leaderboard = () => {
           </thead>
           <tbody>
             {currentItems?.map((entry: LeaderboardEntry) => {
-              const rank =
+              const displayRank =
                 rankingView === "total"
                   ? entry.totalRank
-                  : entry.latestWeekRank;
+                  : entry.weekRanks?.[rankingView]?.rank || 0;
+              const totalUsersInWeek =
+                rankingView === "total"
+                  ? 0
+                  : entry.weekRanks?.[rankingView]?.totalUsers || 0;
               const displayProfit =
                 rankingView === "total"
                   ? entry.profit
@@ -751,14 +820,22 @@ const Leaderboard = () => {
                   key={entry.key}
                   className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                 >
-                  <td className="px-6 py-4 font-medium">{rank || 0}</td>
+                  <td className="px-6 py-4 font-medium">
+                    {displayRank || 0}
+                    {rankingView !== "total" && totalUsersInWeek > 0 && (
+                      <span className="text-gray-400 text-xs ml-1">
+                        /{totalUsersInWeek}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 font-mono text-sm truncate max-w-xs">
                     <button
                       onClick={() => {
-                        navigator.clipboard.writeText(entry.key);
+                        setSearchQuery(entry.key);
+                        handleSearch(entry.key);
                       }}
                       className="hover:text-blue-500 transition-colors cursor-pointer"
-                      title="Click to copy full address"
+                      title="Click to search this address"
                     >
                       {entry.key.substring(0, 10)}...
                       {entry.key.substring(entry.key.length - 6)}
