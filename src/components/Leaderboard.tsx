@@ -705,12 +705,38 @@ const Leaderboard = () => {
                                   <span className="text-gray-500">Amount:</span>
                                   <span className="font-medium">
                                     {parseFloat(period.amount).toFixed(4)}
+                                    {period.count > 0 && (
+                                      <span
+                                        className="text-xs text-gray-400 ml-1"
+                                        title="Average per prediction"
+                                      >
+                                        (
+                                        {(
+                                          parseFloat(period.amount) /
+                                          period.count
+                                        ).toFixed(2)}
+                                        )
+                                      </span>
+                                    )}
                                   </span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-gray-500">Cost:</span>
                                   <span className="font-medium">
                                     {parseFloat(period.cost_basis).toFixed(4)}
+                                    {period.count > 0 && (
+                                      <span
+                                        className="text-xs text-gray-400 ml-1"
+                                        title="Average per prediction"
+                                      >
+                                        (
+                                        {(
+                                          parseFloat(period.cost_basis) /
+                                          period.count
+                                        ).toFixed(2)}
+                                        )
+                                      </span>
+                                    )}
                                   </span>
                                 </div>
                                 <div className="flex justify-between">
