@@ -242,7 +242,16 @@ const Leaderboard = () => {
 
   // Sort data based on selected ranking view
   const sortedLeaderboard = useMemo(() => {
-    return [...processedData].sort((a, b) => {
+    let filteredData = [...processedData];
+
+    // Filter out users with no transactions in the selected week
+    if (typeof rankingView === "number") {
+      filteredData = filteredData.filter(
+        (entry) => entry.weekCounts?.[rankingView] > 0,
+      );
+    }
+
+    return filteredData.sort((a, b) => {
       if (sortField === "count") {
         // Sort by count
         if (rankingView === "total") {
