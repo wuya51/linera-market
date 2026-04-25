@@ -696,9 +696,74 @@ const Leaderboard = () => {
                                 <span className="text-sm font-medium text-green-600 dark:text-green-400">
                                   Day {parseInt(day) + 1}
                                 </span>
-                                <span className="text-xs text-gray-500">
-                                  Count: {period.count}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-gray-500">
+                                    Count: {period.count}
+                                  </span>
+                                  {/* Daily Rank */}
+                                  {(() => {
+                                    // 计算该日所有用户的收益并排序
+                                    const dayUsers = leaderboard
+                                      ?.map((entry) => {
+                                        const userPeriod =
+                                          entry.value.fastPeriods?.[day];
+                                        if (userPeriod) {
+                                          return {
+                                            key: entry.key,
+                                            profit:
+                                              parseFloat(userPeriod.amount) -
+                                              parseFloat(userPeriod.cost_basis),
+                                          };
+                                        }
+                                        return null;
+                                      })
+                                      .filter(Boolean) as Array<{
+                                      key: string;
+                                      profit: number;
+                                    }>;
+
+                                    // 排序用户
+                                    dayUsers?.sort(
+                                      (a, b) => b.profit - a.profit,
+                                    );
+
+                                    // 计算当前用户的排名
+                                    const userRank =
+                                      dayUsers?.findIndex(
+                                        (u) => u.key === searchedEntry.key,
+                                      ) + 1 || 0;
+                                    const totalUsers = dayUsers?.length || 1;
+                                    const rankPercentage =
+                                      totalUsers > 0
+                                        ? (userRank / totalUsers) * 100
+                                        : 0;
+
+                                    // 确定排名等级
+                                    let rankLevel = "";
+                                    if (rankPercentage <= 1)
+                                      rankLevel = "Top 1%";
+                                    else if (rankPercentage <= 5)
+                                      rankLevel = "Top 5%";
+                                    else if (rankPercentage <= 20)
+                                      rankLevel = "Top 20%";
+                                    else if (rankPercentage <= 50)
+                                      rankLevel = "Top 50%";
+                                    else rankLevel = "Below 50%";
+
+                                    return (
+                                      <>
+                                        <span className="text-xs font-medium text-purple-600 dark:text-purple-400">
+                                          Rank: #{userRank}
+                                        </span>
+                                        <span
+                                          className={`text-xs font-medium ${rankPercentage <= 1 ? "text-yellow-500" : rankPercentage <= 5 ? "text-orange-500" : rankPercentage <= 20 ? "text-green-500" : "text-gray-500"}`}
+                                        >
+                                          {rankLevel}
+                                        </span>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
                               </div>
                               <div className="space-y-1 text-sm">
                                 <div className="flex justify-between">

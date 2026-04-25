@@ -166,6 +166,7 @@ export async function fetchLeaderboard() {
           value {
             lastUpdated
             slowPeriods
+            fastPeriods
           }
         }
       }
