@@ -162,7 +162,7 @@ export async function fetchLeaderboard() {
 
   try {
     const response = await fetch(url);
-    const data = (await response.json()).data;
+    const data = await response.json();
     console.log("Raw leaderboard data:", data);
 
     // 保持与之前 GraphQL API 相同的数据结构

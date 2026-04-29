@@ -29,7 +29,7 @@ async function graphqlRequest(query) {
     }
 
     const data = await response.json();
-    console.log("GraphQL response:", data);
+    // console.log("GraphQL response:", data);
 
     if (data.errors) {
       throw new Error(data.errors.map((err) => err.message).join(", "));
@@ -63,7 +63,7 @@ async function syncData() {
   try {
     // 1. 从第三方接口拉取数据
     const response = await fetchLeaderboard();
-    console.log("Fetched leaderboard data:", response);
+    // console.log("Fetched leaderboard data:", response);
 
     // 2. 上传到 R2（覆盖写入）
     const command = new PutObjectCommand({
