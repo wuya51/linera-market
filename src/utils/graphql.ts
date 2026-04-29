@@ -158,32 +158,27 @@ export async function fetchMarketData() {
 
 // 查询排行榜数据
 export async function fetchLeaderboard() {
-  const query = `
-    query GetLeaderboard {
-      reports {
-        entries(input: {}) {
-          key
-          value {
-            lastUpdated
-            slowPeriods
-            fastPeriods
-          }
-        }
-      }
+  const url = "https://reports.linera.quest/data/leadboard_reports.json";
+
+  try {
+    const response = await fetch(url);
+    const data = (await response.json()).data;
+    console.log("Raw leaderboard data:", data);
+
+    // 保持与之前 GraphQL API 相同的数据结构
+    // 期望的数据结构: { reports: { entries: [...] } }
+    if (data.reports && data.reports.entries) {
+      console.log("Entries count:", data.reports.entries.length);
+      console.log("First entry:", data.reports.entries[0]);
+      return data.reports.entries;
     }
-  `;
-  const data = await graphqlRequest<any>(query);
-  console.log("Raw leaderboard data:", data);
 
-  // 检查数据结构
-  if (data.reports && data.reports.entries) {
-    console.log("Entries count:", data.reports.entries.length);
-    console.log("First entry:", data.reports.entries[0]);
-    return data.reports.entries;
+    console.error("Unexpected data structure:", data);
+    return [];
+  } catch (error) {
+    console.error("Failed to fetch leaderboard data:", error);
+    return [];
   }
-
-  console.error("Unexpected data structure:", data);
-  return [];
 }
 
 // 查询排名数据
