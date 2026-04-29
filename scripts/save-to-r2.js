@@ -63,6 +63,7 @@ async function syncData() {
   try {
     // 1. 从第三方接口拉取数据
     const response = await fetchLeaderboard();
+    console.log("Fetched leaderboard data:", response);
 
     // 2. 上传到 R2（覆盖写入）
     const command = new PutObjectCommand({
@@ -75,6 +76,7 @@ async function syncData() {
 
     await r2Client.send(command);
   } catch (error) {
+    console.error("Error syncing data to R2:", error);
     process.exit(1);
   }
 }
