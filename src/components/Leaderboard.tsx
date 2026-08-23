@@ -32,6 +32,12 @@ interface LeaderboardEntry {
   totalRank?: number;
   latestWeekRank?: number;
   weekRanks?: Record<number, { rank: number; totalUsers: number }>;
+  yesterdayAmount?: number;
+  yesterdayCount?: number;
+  yesterdayCostBasis?: number;
+  yesterdayProfit?: number;
+  yesterdayRank?: number;
+  yesterdayTotalUsers?: number;
 }
 
 interface UserEarningsEntry {
@@ -54,8 +60,12 @@ const Leaderboard = () => {
   );
   const [inputPage, setInputPage] = useState("");
   const [searchView, setSearchView] = useState<"latest" | "total">("latest");
-  const [rankingView, setRankingView] = useState<"total" | number>("total");
-  const [sortField, setSortField] = useState<"profit" | "count">("profit");
+  const [rankingView, setRankingView] = useState<
+    "total" | "yesterday" | number
+  >("total");
+  const [sortField, setSortField] = useState<"profit" | "count" | "volume">(
+    "profit",
+  );
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const itemsPerPage = 100;
   const searchResultsRef = useRef<HTMLDivElement>(null);
@@ -82,6 +92,25 @@ const Leaderboard = () => {
       });
     });
     return maxWeek;
+  }, [leaderboard]);
+
+  // Find yesterday's day index (global max fastPeriods index - 1)
+  // The largest index is "today" (in progress); yesterday = today - 1.
+  // This is a single global value so every account uses the same index.
+  const latestDay = useMemo(() => {
+    if (!leaderboard || leaderboard.length === 0) return null;
+    let maxDay = -1;
+    leaderboard.forEach((entry) => {
+      const fastPeriods = entry.value?.fastPeriods;
+      if (fastPeriods) {
+        Object.keys(fastPeriods).forEach((day) => {
+          const dayNum = parseInt(day);
+          if (!isNaN(dayNum) && dayNum > maxDay) maxDay = dayNum;
+        });
+      }
+    });
+    // yesterday = today (max index) - 1; need at least 2 days of data
+    return maxDay > 0 ? maxDay - 1 : null;
   }, [leaderboard]);
 
   // Set default to latest week when data loads
@@ -132,6 +161,22 @@ const Leaderboard = () => {
         });
       }
 
+      // Calculate yesterday's data from fastPeriods (max index = latest day)
+      let yesterdayAmount = 0;
+      let yesterdayCostBasis = 0;
+      let yesterdayCount = 0;
+      let yesterdayProfit = 0;
+      const fastPeriods = entry.value?.fastPeriods;
+      if (fastPeriods && latestDay !== null) {
+        const dayData = fastPeriods[latestDay.toString()];
+        if (dayData && dayData.amount && dayData.cost_basis) {
+          yesterdayAmount = parseFloat(dayData.amount) || 0;
+          yesterdayCostBasis = parseFloat(dayData.cost_basis) || 0;
+          yesterdayCount = dayData.count || 0;
+          yesterdayProfit = yesterdayAmount - yesterdayCostBasis;
+        }
+      }
+
       return {
         ...entry,
         totalAmount,
@@ -142,6 +187,10 @@ const Leaderboard = () => {
         weekCostBases,
         profit: totalAmount - totalCostBasis,
         latestWeekProfit,
+        yesterdayAmount,
+        yesterdayCostBasis,
+        yesterdayCount,
+        yesterdayProfit,
       };
     });
 
@@ -163,6 +212,26 @@ const Leaderboard = () => {
     const withLatestWeekRankMap = new Map();
     sortedByLatestWeek.forEach((entry, index) => {
       withLatestWeekRankMap.set(entry.key, index + 1);
+    });
+
+    // Sort by yesterday's volume (amount) and add yesterday rank
+    // Only rank users who have transactions yesterday
+    const yesterdayUsers = withProfits.filter(
+      (entry) => (entry.yesterdayCount || 0) > 0,
+    );
+    const sortedByYesterday = [...yesterdayUsers].sort(
+      (a, b) => (b.yesterdayAmount || 0) - (a.yesterdayAmount || 0),
+    );
+    const yesterdayTotalUsers = sortedByYesterday.length;
+    const yesterdayRankMap = new Map<
+      string,
+      { rank: number; totalUsers: number }
+    >();
+    sortedByYesterday.forEach((entry, index) => {
+      yesterdayRankMap.set(entry.key, {
+        rank: index + 1,
+        totalUsers: yesterdayTotalUsers,
+      });
     });
 
     // Calculate ranks for all weeks (only users with transactions in that week)
@@ -211,13 +280,18 @@ const Leaderboard = () => {
     });
 
     // Return with both rankings
-    return withProfits.map((entry) => ({
-      ...entry,
-      totalRank: rankMap.get(entry.key)?.totalRank,
-      latestWeekRank: withLatestWeekRankMap.get(entry.key) || 0,
-      weekRanks: weekRanksMap.get(entry.key) || {},
-    }));
-  }, [leaderboard, latestWeek]);
+    return withProfits.map((entry) => {
+      const yesterdayRankInfo = yesterdayRankMap.get(entry.key);
+      return {
+        ...entry,
+        totalRank: rankMap.get(entry.key)?.totalRank,
+        latestWeekRank: withLatestWeekRankMap.get(entry.key) || 0,
+        weekRanks: weekRanksMap.get(entry.key) || {},
+        yesterdayRank: yesterdayRankInfo?.rank || 0,
+        yesterdayTotalUsers: yesterdayRankInfo?.totalUsers || 0,
+      };
+    });
+  }, [leaderboard, latestWeek, latestDay]);
 
   // Get all available weeks
   const availableWeeks = useMemo(() => {
@@ -249,12 +323,21 @@ const Leaderboard = () => {
       filteredData = filteredData.filter(
         (entry) => entry.weekCounts?.[rankingView] > 0,
       );
+    } else if (rankingView === "yesterday") {
+      // Filter out users with no transactions yesterday
+      filteredData = filteredData.filter(
+        (entry) => (entry.yesterdayCount || 0) > 0,
+      );
     }
 
     return filteredData.sort((a, b) => {
       if (sortField === "count") {
         // Sort by count
-        if (rankingView === "total") {
+        if (rankingView === "yesterday") {
+          return sortOrder === "desc"
+            ? (b.yesterdayCount || 0) - (a.yesterdayCount || 0)
+            : (a.yesterdayCount || 0) - (b.yesterdayCount || 0);
+        } else if (rankingView === "total") {
           // Total view: sort by total count
           return sortOrder === "desc"
             ? (b.totalCount || 0) - (a.totalCount || 0)
@@ -267,9 +350,18 @@ const Leaderboard = () => {
             ? weekCountB - weekCountA
             : weekCountA - weekCountB;
         }
+      } else if (sortField === "volume") {
+        // Always sort by yesterday's volume (amount), regardless of ranking view
+        return sortOrder === "desc"
+          ? (b.yesterdayAmount || 0) - (a.yesterdayAmount || 0)
+          : (a.yesterdayAmount || 0) - (b.yesterdayAmount || 0);
       } else {
         // Sort by profit
-        if (rankingView === "total") {
+        if (rankingView === "yesterday") {
+          return sortOrder === "desc"
+            ? (b.yesterdayProfit || 0) - (a.yesterdayProfit || 0)
+            : (a.yesterdayProfit || 0) - (b.yesterdayProfit || 0);
+        } else if (rankingView === "total") {
           return sortOrder === "desc"
             ? (b.profit || 0) - (a.profit || 0)
             : (a.profit || 0) - (b.profit || 0);
@@ -414,11 +506,22 @@ const Leaderboard = () => {
             Ranking:
           </label>
           <select
-            value={rankingView === "total" ? "total" : rankingView.toString()}
+            value={
+              rankingView === "total"
+                ? "total"
+                : rankingView === "yesterday"
+                  ? "yesterday"
+                  : rankingView.toString()
+            }
             onChange={(e) => {
               const value = e.target.value;
               if (value === "total") {
                 setRankingView("total");
+              } else if (value === "yesterday") {
+                setRankingView("yesterday");
+                // Default sort by volume when entering yesterday view
+                setSortField("volume");
+                setSortOrder("desc");
               } else {
                 setRankingView(parseInt(value));
               }
@@ -427,6 +530,11 @@ const Leaderboard = () => {
             className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all min-w-[180px]"
           >
             <option value="total">Total Ranking</option>
+            {latestDay !== null && (
+              <option value="yesterday">
+                Yesterday Volume Ranking (Day {latestDay + 1})
+              </option>
+            )}
             {availableWeeks.map((week) => (
               <option key={week} value={week}>
                 Week {week + 1} Ranking
@@ -851,12 +959,16 @@ const Leaderboard = () => {
               <th className="px-6 py-4 text-right font-semibold">
                 {rankingView === "total"
                   ? "Total Amount"
-                  : `Week ${rankingView + 1} Amount`}
+                  : rankingView === "yesterday"
+                    ? "Yesterday Amount"
+                    : `Week ${rankingView + 1} Amount`}
               </th>
               <th className="px-6 py-4 text-right font-semibold">
                 {rankingView === "total"
                   ? "Total Cost Basis"
-                  : `Week ${rankingView + 1} Cost Basis`}
+                  : rankingView === "yesterday"
+                    ? "Yesterday Cost Basis"
+                    : `Week ${rankingView + 1} Cost Basis`}
               </th>
               <th className="px-6 py-4 text-right font-semibold">
                 <button
@@ -890,8 +1002,29 @@ const Leaderboard = () => {
                 >
                   {rankingView === "total"
                     ? "Total Profit"
-                    : `Week ${rankingView + 1} Profit`}
+                    : rankingView === "yesterday"
+                      ? "Yesterday Profit"
+                      : `Week ${rankingView + 1} Profit`}
                   {sortField === "profit" && (
+                    <span>{sortOrder === "desc" ? "↓" : "↑"}</span>
+                  )}
+                </button>
+              </th>
+              <th className="px-6 py-4 text-right font-semibold">
+                <button
+                  onClick={() => {
+                    if (sortField === "volume") {
+                      setSortOrder(sortOrder === "desc" ? "asc" : "desc");
+                    } else {
+                      setSortField("volume");
+                      setSortOrder("desc");
+                    }
+                  }}
+                  className="flex items-center justify-end gap-1 hover:text-white/90 transition-colors w-full"
+                  title="Yesterday's trading volume (from latest fastPeriods day)"
+                >
+                  Yesterday Volume
+                  {sortField === "volume" && (
                     <span>{sortOrder === "desc" ? "↓" : "↑"}</span>
                   )}
                 </button>
@@ -906,15 +1039,21 @@ const Leaderboard = () => {
               const displayRank =
                 rankingView === "total"
                   ? entry.totalRank
-                  : entry.weekRanks?.[rankingView]?.rank || 0;
+                  : rankingView === "yesterday"
+                    ? entry.yesterdayRank
+                    : entry.weekRanks?.[rankingView]?.rank || 0;
               const totalUsersInWeek =
                 rankingView === "total"
                   ? 0
-                  : entry.weekRanks?.[rankingView]?.totalUsers || 0;
+                  : rankingView === "yesterday"
+                    ? entry.yesterdayTotalUsers || 0
+                    : entry.weekRanks?.[rankingView]?.totalUsers || 0;
               const displayProfit =
                 rankingView === "total"
                   ? entry.profit
-                  : getWeekProfit(entry, rankingView);
+                  : rankingView === "yesterday"
+                    ? entry.yesterdayProfit
+                    : getWeekProfit(entry, rankingView);
               return (
                 <tr
                   key={entry.key}
@@ -944,25 +1083,34 @@ const Leaderboard = () => {
                   <td className="px-6 py-4 text-right font-mono font-medium">
                     {rankingView === "total"
                       ? entry.totalAmount?.toFixed(4)
-                      : entry.weekAmounts?.[rankingView]?.toFixed(4) ||
-                        "0.0000"}
+                      : rankingView === "yesterday"
+                        ? entry.yesterdayAmount?.toFixed(4) || "0.0000"
+                        : entry.weekAmounts?.[rankingView]?.toFixed(4) ||
+                          "0.0000"}
                   </td>
                   <td className="px-6 py-4 text-right font-mono">
                     {rankingView === "total"
                       ? entry.totalCostBasis?.toFixed(4)
-                      : entry.weekCostBases?.[rankingView]?.toFixed(4) ||
-                        "0.0000"}
+                      : rankingView === "yesterday"
+                        ? entry.yesterdayCostBasis?.toFixed(4) || "0.0000"
+                        : entry.weekCostBases?.[rankingView]?.toFixed(4) ||
+                          "0.0000"}
                   </td>
                   <td className="px-6 py-4 text-right font-mono">
                     {rankingView === "total"
                       ? entry.totalCount || 0
-                      : entry.weekCounts?.[rankingView] || 0}
+                      : rankingView === "yesterday"
+                        ? entry.yesterdayCount || 0
+                        : entry.weekCounts?.[rankingView] || 0}
                   </td>
                   <td
                     className={`px-6 py-4 text-right font-mono font-medium ${(displayProfit || 0) >= 0 ? "text-green-500" : "text-red-500"}`}
                   >
                     {(displayProfit || 0) >= 0 ? "+" : ""}
                     {(displayProfit || 0).toFixed(4)}
+                  </td>
+                  <td className="px-6 py-4 text-right font-mono font-medium text-blue-600 dark:text-blue-400">
+                    {entry.yesterdayAmount?.toFixed(4) || "0.0000"}
                   </td>
                   <td className="px-6 py-4 text-right text-sm text-gray-600 dark:text-gray-400">
                     {new Date(entry.value.lastUpdated / 1000).toLocaleString()}
