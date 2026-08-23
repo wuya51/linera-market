@@ -38,6 +38,10 @@ interface LeaderboardEntry {
   yesterdayProfit?: number;
   yesterdayRank?: number;
   yesterdayTotalUsers?: number;
+  todayAmount?: number;
+  todayCount?: number;
+  todayCostBasis?: number;
+  todayProfit?: number;
 }
 
 interface UserEarningsEntry {
@@ -63,9 +67,9 @@ const Leaderboard = () => {
   const [rankingView, setRankingView] = useState<
     "total" | "yesterday" | number
   >("total");
-  const [sortField, setSortField] = useState<"profit" | "count" | "volume">(
-    "profit",
-  );
+  const [sortField, setSortField] = useState<
+    "profit" | "count" | "volume" | "todayVolume"
+  >("profit");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const itemsPerPage = 100;
   const searchResultsRef = useRef<HTMLDivElement>(null);
@@ -111,6 +115,22 @@ const Leaderboard = () => {
     });
     // yesterday = today (max index) - 1; need at least 2 days of data
     return maxDay > 0 ? maxDay - 1 : null;
+  }, [leaderboard]);
+
+  // Find today's day index (global max fastPeriods index)
+  const todayDay = useMemo(() => {
+    if (!leaderboard || leaderboard.length === 0) return null;
+    let maxDay = -1;
+    leaderboard.forEach((entry) => {
+      const fastPeriods = entry.value?.fastPeriods;
+      if (fastPeriods) {
+        Object.keys(fastPeriods).forEach((day) => {
+          const dayNum = parseInt(day);
+          if (!isNaN(dayNum) && dayNum > maxDay) maxDay = dayNum;
+        });
+      }
+    });
+    return maxDay >= 0 ? maxDay : null;
   }, [leaderboard]);
 
   // Set default to latest week when data loads
@@ -177,6 +197,21 @@ const Leaderboard = () => {
         }
       }
 
+      // Calculate today's data from fastPeriods (max index = today)
+      let todayAmount = 0;
+      let todayCostBasis = 0;
+      let todayCount = 0;
+      let todayProfit = 0;
+      if (fastPeriods && todayDay !== null) {
+        const todayData = fastPeriods[todayDay.toString()];
+        if (todayData && todayData.amount && todayData.cost_basis) {
+          todayAmount = parseFloat(todayData.amount) || 0;
+          todayCostBasis = parseFloat(todayData.cost_basis) || 0;
+          todayCount = todayData.count || 0;
+          todayProfit = todayAmount - todayCostBasis;
+        }
+      }
+
       return {
         ...entry,
         totalAmount,
@@ -191,6 +226,10 @@ const Leaderboard = () => {
         yesterdayCostBasis,
         yesterdayCount,
         yesterdayProfit,
+        todayAmount,
+        todayCostBasis,
+        todayCount,
+        todayProfit,
       };
     });
 
@@ -291,7 +330,7 @@ const Leaderboard = () => {
         yesterdayTotalUsers: yesterdayRankInfo?.totalUsers || 0,
       };
     });
-  }, [leaderboard, latestWeek, latestDay]);
+  }, [leaderboard, latestWeek, latestDay, todayDay]);
 
   // Get all available weeks
   const availableWeeks = useMemo(() => {
@@ -355,6 +394,11 @@ const Leaderboard = () => {
         return sortOrder === "desc"
           ? (b.yesterdayAmount || 0) - (a.yesterdayAmount || 0)
           : (a.yesterdayAmount || 0) - (b.yesterdayAmount || 0);
+      } else if (sortField === "todayVolume") {
+        // Always sort by today's volume (amount), regardless of ranking view
+        return sortOrder === "desc"
+          ? (b.todayAmount || 0) - (a.todayAmount || 0)
+          : (a.todayAmount || 0) - (b.todayAmount || 0);
       } else {
         // Sort by profit
         if (rankingView === "yesterday") {
@@ -1030,6 +1074,25 @@ const Leaderboard = () => {
                 </button>
               </th>
               <th className="px-6 py-4 text-right font-semibold">
+                <button
+                  onClick={() => {
+                    if (sortField === "todayVolume") {
+                      setSortOrder(sortOrder === "desc" ? "asc" : "desc");
+                    } else {
+                      setSortField("todayVolume");
+                      setSortOrder("desc");
+                    }
+                  }}
+                  className="flex items-center justify-end gap-1 hover:text-white/90 transition-colors w-full"
+                  title="Today's trading volume (from latest fastPeriods day)"
+                >
+                  Today Volume
+                  {sortField === "todayVolume" && (
+                    <span>{sortOrder === "desc" ? "↓" : "↑"}</span>
+                  )}
+                </button>
+              </th>
+              <th className="px-6 py-4 text-right font-semibold">
                 Last Updated
               </th>
             </tr>
@@ -1111,6 +1174,9 @@ const Leaderboard = () => {
                   </td>
                   <td className="px-6 py-4 text-right font-mono font-medium text-blue-600 dark:text-blue-400">
                     {entry.yesterdayAmount?.toFixed(4) || "0.0000"}
+                  </td>
+                  <td className="px-6 py-4 text-right font-mono font-medium text-green-600 dark:text-green-400">
+                    {entry.todayAmount?.toFixed(4) || "0.0000"}
                   </td>
                   <td className="px-6 py-4 text-right text-sm text-gray-600 dark:text-gray-400">
                     {new Date(entry.value.lastUpdated / 1000).toLocaleString()}
